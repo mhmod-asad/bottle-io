@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Bottle.io — Water Bottle Battle</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg: #0b2a3a;
+  --panel: rgba(6, 22, 32, 0.72);
+  --panel-brd: rgba(120, 200, 240, 0.18);
+  --accent: #4fd1e6;
+  --accent-2: #7de0ff;
+  --text: #eaf6fb;
+  --muted: #8fb4c4;
+}
+
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+canvas#game { display: block; position: fixed; inset: 0; cursor: none; }
+
+.hidden { display: none !important; }
+
+/* ---------- HUD ---------- */
+#hud { position: fixed; inset: 0; pointer-events: none; }
+
+#stats {
+  position: absolute; left: 14px; bottom: 14px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.stat {
+  background: var(--panel);
+  border: 1px solid var(--panel-brd);
+  padding: 7px 14px; border-radius: 10px;
+  font-size: 15px; font-weight: bold;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 4px 18px rgba(0,0,0,0.3);
+}
+.stat-label { color: var(--muted); font-weight: normal; margin-right: 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
+.stat span:last-child { color: var(--accent-2); }
+
+#leaderboard {
+  position: absolute; right: 14px; top: 14px;
+  width: 190px;
+  background: var(--panel);
+  border: 1px solid var(--panel-brd);
+  border-radius: 12px; padding: 12px 14px;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 4px 18px rgba(0,0,0,0.3);
+}
+#leaderboard h3 { font-size: 14px; margin-bottom: 8px; color: var(--accent-2); letter-spacing: 0.5px; }
+#leaderboard ol { list-style: none; counter-reset: lb; }
+#leaderboard li {
+  counter-increment: lb;
+  font-size: 13px; padding: 3px 0;
+  display: flex; align-items: center; gap: 6px;
+  color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#leaderboard li::before { content: counter(lb); width: 16px; color: var(--accent); font-weight: bold; text-align: right; }
+#leaderboard li.me { color: var(--text); font-weight: bold; }
+#leaderboard li .swatch { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+
+#minimap-wrap {
+  position: absolute; right: 14px; bottom: 14px;
+  background: var(--panel);
+  border: 1px solid var(--panel-brd);
+  border-radius: 12px; padding: 6px;
+  backdrop-filter: blur(6px);
+  line-height: 0;
+}
+#minimap { border-radius: 6px; opacity: 0.9; }
+
+.mobile-btn { display: none; }
+
+/* ---------- Menus ---------- */
+#menu, #gameover {
+  position: fixed; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 40%, #0e3346 0%, #071a26 70%, #04121a 100%);
+  z-index: 10;
+}
+
+.menu-card {
+  background: var(--panel);
+  border: 1px solid var(--panel-brd);
+  border-radius: 20px;
+  padding: 34px 40px;
+  width: min(90vw, 420px);
+  text-align: center;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.05);
+  animation: pop 0.4s cubic-bezier(.2,.9,.3,1.3);
+}
+@keyframes pop { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+.logo { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 6px; }
+.logo-bottle { font-size: 40px; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.4)); animation: bob 2.4s ease-in-out infinite; }
+@keyframes bob { 0%,100% { transform: translateY(0) rotate(-4deg); } 50% { transform: translateY(-6px) rotate(4deg); } }
+.logo h1 { font-size: 42px; letter-spacing: -1px; background: linear-gradient(180deg, #cdeeff, #4fd1e6); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+.logo .dot { color: var(--accent); -webkit-text-fill-color: var(--accent); }
+
+.tagline { color: var(--muted); font-size: 14px; margin-bottom: 22px; }
+
+#nameInput {
+  width: 100%; padding: 13px 16px; margin-bottom: 16px;
+  border-radius: 12px; border: 1px solid var(--panel-brd);
+  background: rgba(0,0,0,0.25); color: var(--text);
+  font-size: 16px; text-align: center; outline: none;
+  transition: border 0.2s;
+}
+#nameInput:focus { border-color: var(--accent); }
+#nameInput::placeholder { color: var(--muted); }
+
+.color-row { display: flex; gap: 10px; justify-content: center; margin-bottom: 22px; flex-wrap: wrap; }
+.color-dot {
+  width: 30px; height: 30px; border-radius: 50%; cursor: pointer;
+  border: 3px solid transparent; transition: transform 0.15s, border 0.15s;
+}
+.color-dot:hover { transform: scale(1.15); }
+.color-dot.sel { border-color: #fff; transform: scale(1.15); }
+
+#playBtn, #respawnBtn {
+  width: 100%; padding: 15px; border: none; border-radius: 12px;
+  background: linear-gradient(180deg, #4fd1e6, #2a9fc4);
+  color: #052430; font-size: 18px; font-weight: bold; letter-spacing: 1px;
+  cursor: pointer; box-shadow: 0 8px 24px rgba(79,209,230,0.35);
+  transition: transform 0.12s, box-shadow 0.12s;
+}
+#playBtn:hover, #respawnBtn:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(79,209,230,0.5); }
+#playBtn:active, #respawnBtn:active { transform: translateY(0); }
+
+.controls-hint { margin-top: 20px; display: flex; justify-content: center; gap: 18px; flex-wrap: wrap; color: var(--muted); font-size: 12px; }
+.controls-hint b { color: var(--accent-2); }
+
+.credit { margin-top: 18px; color: rgba(143,180,196,0.5); font-size: 12px; }
+
+.dead-title { font-size: 46px; color: #ff7a7a; margin-bottom: 4px; text-shadow: 0 4px 20px rgba(255,80,80,0.3); }
+.dead-sub { color: var(--muted); margin-bottom: 24px; }
+.dead-stats { display: flex; justify-content: space-around; margin-bottom: 26px; }
+.dead-stats > div { display: flex; flex-direction: column; gap: 4px; }
+.dead-stats span { font-size: 26px; font-weight: bold; color: var(--accent-2); }
+.dead-stats small { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* ---------- Mobile ---------- */
+@media (max-width: 720px) {
+  #leaderboard { width: 150px; padding: 9px 11px; }
+  #leaderboard h3 { font-size: 12px; }
+  #leaderboard li { font-size: 11px; }
+  #minimap { width: 110px; height: 110px; }
+  #minimap-wrap { right: 10px; bottom: 10px; }
+  .mobile-btn {
+    display: block; position: absolute; left: 16px; bottom: 90px;
+    pointer-events: auto;
+    width: 76px; height: 76px; border-radius: 50%;
+    background: linear-gradient(180deg, #4fd1e6, #2a9fc4);
+    color: #052430; font-weight: bold; font-size: 14px; border: none;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+  }
+  .menu-card { padding: 26px 24px; }
+  .logo h1 { font-size: 34px; }
+}
+</style>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <!-- HUD -->
+  <div id="hud" class="hidden">
+    <div id="stats">
+      <div class="stat"><span class="stat-label">Volume</span><span id="scoreVal">0</span> mL</div>
+      <div class="stat"><span class="stat-label">Rank</span><span id="rankVal">-</span></div>
+    </div>
+    <div id="leaderboard">
+      <h3>💧 Leaderboard</h3>
+      <ol id="lbList"></ol>
+    </div>
+    <div id="minimap-wrap">
+      <canvas id="minimap" width="160" height="160"></canvas>
+    </div>
+    <button id="splitBtn" class="mobile-btn">SPLIT</button>
+  </div>
+
+  <!-- Start screen -->
+  <div id="menu">
+    <div class="menu-card">
+      <div class="logo">
+        <span class="logo-bottle">🍶</span>
+        <h1>Bottle<span class="dot">.</span>io</h1>
+      </div>
+      <p class="tagline">Sip the droplets. Swallow your rivals. Stay hydrated.</p>
+      <input id="nameInput" type="text" maxlength="14" placeholder="Name your bottle" autocomplete="off">
+      <div class="color-row" id="colorRow"></div>
+      <button id="playBtn">PLAY</button>
+      <div class="controls-hint">
+        <span><b>Move</b> Mouse</span>
+        <span><b>Split</b> Space</span>
+        <span><b>Eject</b> W</span>
+      </div>
+    </div>
+    <div class="credit">A single-file canvas game</div>
+  </div>
+
+  <!-- Death screen -->
+  <div id="gameover" class="hidden">
+    <div class="menu-card">
+      <h1 class="dead-title">Spilled!</h1>
+      <p class="dead-sub">Your bottle was emptied.</p>
+      <div class="dead-stats">
+        <div><span id="finalScore">0</span><small>Peak Volume (mL)</small></div>
+        <div><span id="finalRank">-</span><small>Best Rank</small></div>
+        <div><span id="finalTime">0s</span><small>Survived</small></div>
+      </div>
+      <button id="respawnBtn">PLAY AGAIN</button>
+    </div>
+  </div>
+
+<script>
+/* ============================================================
+   Bottle.io — an agar.io-style game with water-bottle characters
+   Single-file canvas engine. No dependencies.
+   ============================================================ */
+(() => {
+'use strict';
+
+// ---------- Canvas setup ----------
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const mini = document.getElementById('minimap');
+const mctx = mini.getContext('2d');
+
+let VW = 0, VH = 0, DPR = 1;
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  VW = window.innerWidth; VH = window.innerHeight;
+  canvas.width = VW * DPR; canvas.height = VH * DPR;
+  canvas.style.width = VW + 'px'; canvas.style.height = VH + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ---------- World constants ----------
+const WORLD = 4200;                 // square world size
+const FOOD_TARGET = 650;
+const BOT_TARGET = 20;
+const VIRUS_TARGET = 16;
+const START_MASS = 24;
+const MIN_SPLIT_MASS = 36;
+const MAX_PIECES = 12;
+const MERGE_COOLDOWN = 12;          // seconds before split pieces can re-merge
+const EJECT_MASS = 14;
+const VIRUS_MASS = 130;
+const VIRUS_POP_MASS = 150;         // need this much to pop a virus
+const EAT_RATIO = 1.20;             // must be this much bigger (by mass) to eat
+
+const COLORS = [
+  '#4fd1e6', '#5b8cff', '#7b6bff', '#ff6bd6',
+  '#ff8a5b', '#ffd15b', '#6bff9e', '#ff5b6b',
+];
+const BOT_NAMES = ['Aqua','Dasani','Fiji','Evian','Splash','Hydro','Voss','Perrier',
+  'Poland','Smart','Deer Park','Ice Mtn','Crystal','Zephyr','Tide','Bubbler',
+  'Gulp','Drizzle','Sip','Quench','Vapor','Mist','Frost','Brook'];
+
+// ---------- Utility ----------
+const rand = (a, b) => a + Math.random() * (b - a);
+const randInt = (a, b) => Math.floor(rand(a, b + 1));
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const dist2 = (ax, ay, bx, by) => { const dx = ax - bx, dy = ay - by; return dx * dx + dy * dy; };
+const massToRadius = m => Math.sqrt(m / Math.PI) * 5.2;
+const pick = arr => arr[randInt(0, arr.length - 1)];
+
+function shade(hex, amt) {
+  const n = parseInt(hex.slice(1), 16);
+  let r = (n >> 16) + amt, g = ((n >> 8) & 255) + amt, b = (n & 255) + amt;
+  r = clamp(r, 0, 255); g = clamp(g, 0, 255); b = clamp(b, 0, 255);
+  return `rgb(${r},${g},${b})`;
+}
+
+function roundRectPath(c, x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  c.beginPath();
+  c.moveTo(x + r, y);
+  c.arcTo(x + w, y, x + w, y + h, r);
+  c.arcTo(x + w, y + h, x, y + h, r);
+  c.arcTo(x, y + h, x, y, r);
+  c.arcTo(x, y, x + w, y, r);
+  c.closePath();
+}
+
+// ---------- Game state ----------
+let food = [];
+let viruses = [];
+let cells = [];          // all player/bot "pieces"
+let ejected = [];        // ejected mass pellets
+let player = null;       // owner object for the human
+let owners = [];         // all owners (player + bots)
+let running = false;
+let startTime = 0, peakMass = 0, bestRank = 99;
+let camX = WORLD / 2, camY = WORLD / 2, camScale = 1;
+let mouse = { x: 0, y: 0 };          // screen space
+const keys = {};
+let nextId = 1;
+
+// ---------- Owner & cell factories ----------
+function makeOwner(name, color, isBot) {
+  return { id: nextId++, name, color, isBot, dead: false,
+           ai: isBot ? { retarget: 0, tx: 0, ty: 0 } : null };
+}
+
+function spawnCell(owner, x, y, mass) {
+  const c = {
+    owner, x, y, mass,
+    r: massToRadius(mass),
+    vx: 0, vy: 0,          // split momentum
+    mergeTimer: 0,         // seconds until it can merge with siblings
+    wobble: rand(0, Math.PI * 2),
+    id: nextId++,
+  };
+  cells.push(c);
+  return c;
+}
+
+function ownerCells(owner) {
+  const out = [];
+  for (const c of cells) if (c.owner === owner) out.push(c);
+  return out;
+}
+function ownerMass(owner) {
+  let m = 0; for (const c of cells) if (c.owner === owner) m += c.mass; return m;
+}
+
+function safeSpawnPoint() {
+  // avoid spawning on top of something big
+  for (let i = 0; i < 30; i++) {
+    const x = rand(200, WORLD - 200), y = rand(200, WORLD - 200);
+    let ok = true;
+    for (const c of cells) {
+      if (c.mass > 60 && dist2(x, y, c.x, c.y) < 300 * 300) { ok = false; break; }
+    }
+    if (ok) return { x, y };
+  }
+  return { x: rand(200, WORLD - 200), y: rand(200, WORLD - 200) };
+}
+
+// ---------- Spawners ----------
+function spawnFood(n) {
+  for (let i = 0; i < n; i++) {
+    food.push({
+      x: rand(20, WORLD - 20), y: rand(20, WORLD - 20),
+      r: rand(5, 8), mass: 1.2,
+      hue: pick(COLORS), wob: rand(0, 6.28),
+    });
+  }
+}
+function spawnVirus() {
+  const p = safeSpawnPoint();
+  viruses.push({ x: p.x, y: p.y, mass: VIRUS_MASS, r: massToRadius(VIRUS_MASS), spin: rand(0, 6.28) });
+}
+function spawnBot() {
+  const o = makeOwner(pick(BOT_NAMES), pick(COLORS), true);
+  owners.push(o);
+  const p = safeSpawnPoint();
+  spawnCell(o, p.x, p.y, rand(START_MASS, 60));
+}
+
+// ---------- Input ----------
+window.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+window.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'Space') { e.preventDefault(); doSplit(); }
+  if (e.code === 'KeyW') doEject();
+});
+window.addEventListener('keyup', e => { keys[e.code] = false; });
+// touch
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0]; mouse.x = t.clientX; mouse.y = t.clientY;
+}, { passive: false });
+canvas.addEventListener('touchstart', e => {
+  const t = e.touches[0]; mouse.x = t.clientX; mouse.y = t.clientY;
+}, { passive: false });
+document.getElementById('splitBtn').addEventListener('touchstart', e => { e.preventDefault(); doSplit(); });
+
+// mouse world position
+function mouseWorld() {
+  return {
+    x: camX + (mouse.x - VW / 2) / camScale,
+    y: camY + (mouse.y - VH / 2) / camScale,
+  };
+}
+
+// ---------- Player actions ----------
+function doSplit() {
+  if (!running || !player) return;
+  const mine = ownerCells(player);
+  if (mine.length >= MAX_PIECES) return;
+  const m = mouseWorld();
+  // split biggest first
+  mine.sort((a, b) => b.mass - a.mass);
+  const room = MAX_PIECES - mine.length;
+  let done = 0;
+  for (const c of mine) {
+    if (done >= room) break;
+    if (c.mass < MIN_SPLIT_MASS) continue;
+    splitCell(c, m.x, m.y);
+    done++;
+  }
+}
+function splitCell(c, tx, ty) {
+  const half = c.mass / 2;
+  c.mass = half; c.r = massToRadius(half);
+  let dx = tx - c.x, dy = ty - c.y;
+  const d = Math.hypot(dx, dy) || 1; dx /= d; dy /= d;
+  const nc = spawnCell(c.owner, c.x, c.y, half);
+  const boost = 18 + c.r * 0.25;
+  nc.vx = dx * boost; nc.vy = dy * boost;
+  nc.mergeTimer = MERGE_COOLDOWN;
+  c.mergeTimer = MERGE_COOLDOWN;
+}
+function doEject() {
+  if (!running || !player) return;
+  const m = mouseWorld();
+  for (const c of ownerCells(player)) {
+    if (c.mass < EJECT_MASS + 20) continue;
+    let dx = m.x - c.x, dy = m.y - c.y;
+    const d = Math.hypot(dx, dy) || 1; dx /= d; dy /= d;
+    c.mass -= EJECT_MASS; c.r = massToRadius(c.mass);
+    ejected.push({
+      x: c.x + dx * c.r, y: c.y + dy * c.r,
+      vx: dx * 34, vy: dy * 34,
+      mass: EJECT_MASS * 0.72, r: massToRadius(EJECT_MASS * 0.72),
+      hue: c.owner.color, life: 0,
+    });
+  }
+}
+
+// ---------- AI ----------
+function updateBot(owner, dt) {
+  const mine = ownerCells(owner);
+  if (!mine.length) return;
+  let cx = 0, cy = 0, tot = 0;
+  for (const c of mine) { cx += c.x * c.mass; cy += c.y * c.mass; tot += c.mass; }
+  cx /= tot; cy /= tot;
+  const myMass = tot;
+
+  const ai = owner.ai;
+  ai.retarget -= dt;
+
+  // Threats & prey scan
+  let threat = null, threatD = 1e9;
+  let prey = null, preyD = 1e9;
+  for (const c of cells) {
+    if (c.owner === owner) continue;
+    const d = dist2(cx, cy, c.x, c.y);
+    if (c.mass > myMass * EAT_RATIO * 0.55 && d < 420 * 420 && d < threatD) { threat = c; threatD = d; }
+    else if (myMass > c.mass * EAT_RATIO * 1.1 && d < 560 * 560 && d < preyD) { prey = c; preyD = d; }
+  }
+  // nearest food
+  let fx = cx, fy = cy, fd = 1e9;
+  for (let i = 0; i < food.length; i += 3) { // sample for speed
+    const f = food[i]; const d = dist2(cx, cy, f.x, f.y);
+    if (d < fd) { fd = d; fx = f.x; fy = f.y; }
+  }
+
+  if (threat) {
+    ai.tx = cx - (threat.x - cx); ai.ty = cy - (threat.y - cy);
+    // panic split-flee if much bigger threat is close (rare)
+  } else if (prey) {
+    ai.tx = prey.x; ai.ty = prey.y;
+    if (ai.retarget <= 0 && myMass > prey.mass * 2.4 && preyD < 200 * 200 && mine.length < 4 && myMass > MIN_SPLIT_MASS * 2) {
+      splitCell(mine[0], prey.x, prey.y); ai.retarget = 2;
+    }
+  } else {
+    if (ai.retarget <= 0) { ai.tx = fx; ai.ty = fy; ai.retarget = 0.6; }
+  }
+  // avoid virus when big
+  if (myMass > VIRUS_POP_MASS) {
+    for (const v of viruses) {
+      if (dist2(cx, cy, v.x, v.y) < 160 * 160) { ai.tx = cx - (v.x - cx); ai.ty = cy - (v.y - cy); }
+    }
+  }
+  steerCells(owner, ai.tx, ai.ty, dt);
+}
+
+// ---------- Movement ----------
+function steerCells(owner, tx, ty, dt) {
+  for (const c of cells) {
+    if (c.owner !== owner) continue;
+    let dx = tx - c.x, dy = ty - c.y;
+    const d = Math.hypot(dx, dy);
+    const speed = (2.2 + 620 / (c.r + 18)) * 26; // smaller = faster
+    if (d > 1) {
+      const s = Math.min(d, speed) / d;
+      c.x += dx * s * dt;
+      c.y += dy * s * dt;
+    }
+  }
+}
+
+function integrate(dt) {
+  // apply split momentum + friction, world bounds
+  for (const c of cells) {
+    c.x += c.vx * dt; c.y += c.vy * dt;
+    c.vx *= Math.pow(0.02, dt); c.vy *= Math.pow(0.02, dt);
+    if (Math.abs(c.vx) < 0.4) c.vx = 0;
+    if (Math.abs(c.vy) < 0.4) c.vy = 0;
+    if (c.mergeTimer > 0) c.mergeTimer -= dt;
+    c.mass *= Math.pow(0.998, dt * (c.mass > 200 ? 1 : 0)); // slow decay only for big cells
+    c.r = massToRadius(c.mass);
+    c.x = clamp(c.x, c.r, WORLD - c.r);
+    c.y = clamp(c.y, c.r, WORLD - c.r);
+    c.wobble += dt * 3;
+  }
+  // sibling interaction: repel if can't merge, else pull & merge
+  for (let i = 0; i < cells.length; i++) {
+    for (let j = i + 1; j < cells.length; j++) {
+      const a = cells[i], b = cells[j];
+      if (a.owner !== b.owner) continue;
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const d = Math.hypot(dx, dy) || 0.01;
+      const overlap = a.r + b.r - d;
+      if (overlap <= 0) continue;
+      if (a.mergeTimer <= 0 && b.mergeTimer <= 0) {
+        // merge when centers close enough
+        if (d < Math.max(a.r, b.r) * 0.6) {
+          const big = a.mass >= b.mass ? a : b, small = big === a ? b : a;
+          big.mass += small.mass; big.r = massToRadius(big.mass);
+          small.mass = -1; // mark
+        }
+      } else {
+        const push = overlap / 2;
+        const nx = dx / d, ny = dy / d;
+        a.x -= nx * push; a.y -= ny * push;
+        b.x += nx * push; b.y += ny * push;
+      }
+    }
+  }
+  cells = cells.filter(c => c.mass > 0);
+
+  // ejected pellets
+  for (const e of ejected) {
+    e.x += e.vx * dt; e.y += e.vy * dt;
+    e.vx *= Math.pow(0.04, dt); e.vy *= Math.pow(0.04, dt);
+    e.life += dt;
+    e.x = clamp(e.x, e.r, WORLD - e.r);
+    e.y = clamp(e.y, e.r, WORLD - e.r);
+  }
+}
+
+// ---------- Eating ----------
+function handleEating() {
+  // cells eat food
+  for (const c of cells) {
+    const rr = c.r * c.r;
+    for (let i = food.length - 1; i >= 0; i--) {
+      const f = food[i];
+      if (dist2(c.x, c.y, f.x, f.y) < rr) {
+        c.mass += f.mass; food.splice(i, 1);
+      }
+    }
+    // eat ejected mass
+    for (let i = ejected.length - 1; i >= 0; i--) {
+      const e = ejected[i];
+      if (e.life < 0.5) continue;
+      if (dist2(c.x, c.y, e.x, e.y) < rr) { c.mass += e.mass; ejected.splice(i, 1); }
+    }
+    c.r = massToRadius(c.mass);
+  }
+
+  // cells vs cells
+  for (let i = 0; i < cells.length; i++) {
+    const a = cells[i];
+    if (a.mass <= 0) continue;
+    for (let j = 0; j < cells.length; j++) {
+      if (i === j) continue;
+      const b = cells[j];
+      if (b.mass <= 0 || a.owner === b.owner) continue;
+      if (a.mass < b.mass * EAT_RATIO) continue;
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (d < a.r - b.r * 0.5) { a.mass += b.mass; a.r = massToRadius(a.mass); b.mass = -1; }
+    }
+  }
+  cells = cells.filter(c => c.mass > 0);
+
+  // cells vs viruses (pop) / small cells hide
+  for (const v of viruses) {
+    for (const c of cells) {
+      if (c.mass < VIRUS_POP_MASS) continue;
+      if (dist2(c.x, c.y, v.x, v.y) < (c.r - v.r * 0.4) ** 2) {
+        popCell(c, v);
+        v.mass = -1;
+        break;
+      }
+    }
+    // grow virus from ejected mass -> spawn new virus when big
+    for (let i = ejected.length - 1; i >= 0; i--) {
+      const e = ejected[i];
+      if (v.mass > 0 && dist2(v.x, v.y, e.x, e.y) < v.r * v.r && e.life > 0.5) {
+        v.mass += e.mass; v.r = massToRadius(v.mass); ejected.splice(i, 1);
+        if (v.mass > VIRUS_MASS * 1.8) {
+          // shoot a new virus
+          const nx = e.vx, ny = e.vy; const d = Math.hypot(nx, ny) || 1;
+          viruses.push({ x: v.x + nx / d * v.r, y: v.y + ny / d * v.r, mass: VIRUS_MASS, r: massToRadius(VIRUS_MASS), spin: rand(0, 6.28) });
+          v.mass = VIRUS_MASS; v.r = massToRadius(VIRUS_MASS);
+        }
+      }
+    }
+  }
+  viruses = viruses.filter(v => v.mass > 0);
+}
+
+function popCell(c, v) {
+  c.mass += v.mass * 0.5;
+  // explode into pieces
+  const total = c.mass;
+  const pieces = Math.min(MAX_PIECES - ownerCells(c.owner).length + 1, 8);
+  if (pieces <= 1) { c.r = massToRadius(c.mass); return; }
+  const each = total / pieces;
+  c.mass = each; c.r = massToRadius(each);
+  for (let k = 1; k < pieces; k++) {
+    const ang = (k / pieces) * Math.PI * 2 + rand(-0.3, 0.3);
+    const nc = spawnCell(c.owner, c.x, c.y, each);
+    const boost = rand(20, 34);
+    nc.vx = Math.cos(ang) * boost; nc.vy = Math.sin(ang) * boost;
+    nc.mergeTimer = MERGE_COOLDOWN;
+  }
+  c.mergeTimer = MERGE_COOLDOWN;
+}
+
+// ---------- Death / respawn of bots ----------
+function reapOwners() {
+  for (const o of owners) {
+    if (o.isBot && !o.dead && ownerCells(o).length === 0) o.dead = true;
+  }
+  owners = owners.filter(o => !o.dead || o === player);
+  // keep bot population up
+  while (owners.filter(o => o.isBot).length < BOT_TARGET) spawnBot();
+  // player death
+  if (player && running && ownerCells(player).length === 0) endGame();
+}
+
+// ---------- Camera ----------
+function updateCamera(dt) {
+  if (!player) return;
+  const mine = ownerCells(player);
+  if (!mine.length) return;
+  let cx = 0, cy = 0, tot = 0, maxR = 0;
+  for (const c of mine) { cx += c.x * c.mass; cy += c.y * c.mass; tot += c.mass; maxR = Math.max(maxR, c.r); }
+  cx /= tot; cy /= tot;
+  const targetScale = clamp(Math.pow(START_MASS * 3 / (tot + 40), 0.36) * 1.15, 0.32, 1.35);
+  const k = 1 - Math.pow(0.0008, dt);
+  camX += (cx - camX) * k;
+  camY += (cy - camY) * k;
+  camScale += (targetScale - camScale) * (1 - Math.pow(0.02, dt));
+}
+
+// ---------- Rendering ----------
+function worldToScreen(x, y) {
+  return { x: (x - camX) * camScale + VW / 2, y: (y - camY) * camScale + VH / 2 };
+}
+
+function drawGrid() {
+  const step = 64;
+  ctx.strokeStyle = 'rgba(120,190,225,0.08)';
+  ctx.lineWidth = 1;
+  const left = camX - VW / 2 / camScale, right = camX + VW / 2 / camScale;
+  const top = camY - VH / 2 / camScale, bot = camY + VH / 2 / camScale;
+  ctx.beginPath();
+  for (let x = Math.floor(left / step) * step; x < right; x += step) {
+    const sx = (x - camX) * camScale + VW / 2;
+    ctx.moveTo(sx, 0); ctx.lineTo(sx, VH);
+  }
+  for (let y = Math.floor(top / step) * step; y < bot; y += step) {
+    const sy = (y - camY) * camScale + VH / 2;
+    ctx.moveTo(0, sy); ctx.lineTo(VW, sy);
+  }
+  ctx.stroke();
+
+  // world border
+  const tl = worldToScreen(0, 0), br = worldToScreen(WORLD, WORLD);
+  ctx.strokeStyle = 'rgba(255,120,120,0.35)';
+  ctx.lineWidth = 4;
+  ctx.strokeRect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
+}
+
+function drawFood() {
+  for (const f of food) {
+    const s = worldToScreen(f.x, f.y);
+    const r = f.r * camScale;
+    if (s.x < -20 || s.x > VW + 20 || s.y < -20 || s.y > VH + 20) continue;
+    // little droplet
+    ctx.beginPath();
+    ctx.fillStyle = f.hue;
+    ctx.globalAlpha = 0.9;
+    ctx.arc(s.x, s.y, r, 0, 6.283);
+    ctx.fill();
+    ctx.globalAlpha = 0.5;
+    ctx.beginPath();
+    ctx.fillStyle = '#ffffff';
+    ctx.arc(s.x - r * 0.3, s.y - r * 0.35, r * 0.35, 0, 6.283);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+function drawEjected() {
+  for (const e of ejected) {
+    const s = worldToScreen(e.x, e.y);
+    const r = e.r * camScale;
+    ctx.beginPath();
+    ctx.fillStyle = e.hue;
+    ctx.arc(s.x, s.y, r, 0, 6.283);
+    ctx.fill();
+  }
+}
+
+// The star of the show: draw a water bottle
+function drawBottle(c, t, isMe) {
+  const s = worldToScreen(c.x, c.y);
+  const r = c.r * camScale;
+  if (s.x < -r - 60 || s.x > VW + r + 60 || s.y < -r - 60 || s.y > VH + r + 60) return;
+
+  const col = c.owner.color;
+  const H = r * 2.5, W = r * 1.45;
+  const lean = clamp(c.vx * 0.008, -0.35, 0.35);
+  const bob = Math.sin(c.wobble) * r * 0.04;
+
+  ctx.save();
+  ctx.translate(s.x, s.y + bob);
+  ctx.rotate(lean);
+
+  // shadow
+  ctx.beginPath();
+  ctx.ellipse(0, H * 0.48, W * 0.55, W * 0.2, 0, 0, 6.283);
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  ctx.fill();
+
+  const capH = H * 0.13;
+  const neckH = H * 0.08;
+  const bodyTop = -H / 2 + capH + neckH;
+  const bodyH = H - capH - neckH;
+  const bodyR = W * 0.42;
+
+  // ---- Body (glass/plastic, tinted with owner color) ----
+  roundRectPath(ctx, -W / 2, bodyTop, W, bodyH, bodyR);
+  ctx.save();
+  ctx.clip();
+
+  // plastic tint background
+  ctx.fillStyle = shade(col, 40);
+  ctx.globalAlpha = 0.35;
+  ctx.fillRect(-W / 2, bodyTop, W, bodyH);
+  ctx.globalAlpha = 1;
+
+  // water fill (bottom portion) with wavy top
+  const waterTopFrac = 0.24; // empty space at top
+  const waterY = bodyTop + bodyH * waterTopFrac;
+  ctx.beginPath();
+  ctx.moveTo(-W / 2, bodyTop + bodyH);
+  ctx.lineTo(-W / 2, waterY);
+  const waves = 3;
+  for (let i = 0; i <= waves; i++) {
+    const wx = -W / 2 + (W / waves) * i;
+    const wy = waterY + Math.sin(t * 2 + i * 1.4 + c.wobble) * r * 0.06;
+    const cx2 = wx - (W / waves) / 2;
+    const cy2 = waterY + Math.sin(t * 2 + i * 1.4 - 0.7) * r * 0.06 - r * 0.05;
+    if (i === 0) ctx.lineTo(wx, wy); else ctx.quadraticCurveTo(cx2, cy2, wx, wy);
+  }
+  ctx.lineTo(W / 2, bodyTop + bodyH);
+  ctx.closePath();
+  const grad = ctx.createLinearGradient(0, waterY, 0, bodyTop + bodyH);
+  grad.addColorStop(0, shade(col, 60));
+  grad.addColorStop(1, col);
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // left shine stripe
+  ctx.fillStyle = 'rgba(255,255,255,0.28)';
+  ctx.fillRect(-W * 0.36, bodyTop, W * 0.12, bodyH);
+  // small right glare
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  ctx.fillRect(W * 0.22, bodyTop, W * 0.06, bodyH);
+
+  ctx.restore();
+
+  // body outline
+  roundRectPath(ctx, -W / 2, bodyTop, W, bodyH, bodyR);
+  ctx.lineWidth = Math.max(1.5, r * 0.05);
+  ctx.strokeStyle = shade(col, -30);
+  ctx.stroke();
+
+  // ---- Label band ----
+  const labelH = bodyH * 0.30;
+  const labelY = bodyTop + bodyH * 0.42;
+  roundRectPath(ctx, -W / 2 + 1, labelY, W - 2, labelH, W * 0.06);
+  ctx.fillStyle = 'rgba(245,252,255,0.92)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.08)';
+  ctx.lineWidth = 1; ctx.stroke();
+  // label accent lines
+  ctx.strokeStyle = col;
+  ctx.lineWidth = Math.max(1, r * 0.03);
+  ctx.beginPath();
+  ctx.moveTo(-W / 2 + 3, labelY + labelH * 0.22); ctx.lineTo(W / 2 - 3, labelY + labelH * 0.22);
+  ctx.moveTo(-W / 2 + 3, labelY + labelH * 0.78); ctx.lineTo(W / 2 - 3, labelY + labelH * 0.78);
+  ctx.stroke();
+
+  // ---- Neck ----
+  const neckW = W * 0.42;
+  ctx.beginPath();
+  ctx.moveTo(-neckW / 2, bodyTop);
+  ctx.lineTo(-neckW / 2 - 0.5, bodyTop - neckH);
+  ctx.lineTo(neckW / 2 + 0.5, bodyTop - neckH);
+  ctx.lineTo(neckW / 2, bodyTop);
+  ctx.closePath();
+  ctx.fillStyle = shade(col, 20);
+  ctx.globalAlpha = 0.5; ctx.fill(); ctx.globalAlpha = 1;
+  ctx.strokeStyle = shade(col, -30); ctx.lineWidth = Math.max(1.2, r * 0.04); ctx.stroke();
+
+  // ---- Cap ----
+  const capW = W * 0.5, capY = -H / 2;
+  roundRectPath(ctx, -capW / 2, capY, capW, capH, capH * 0.3);
+  ctx.fillStyle = shade(col, -50);
+  ctx.fill();
+  // cap ridges
+  ctx.strokeStyle = 'rgba(0,0,0,0.18)'; ctx.lineWidth = 1;
+  for (let i = 1; i < 4; i++) {
+    const rx = -capW / 2 + (capW / 4) * i;
+    ctx.beginPath(); ctx.moveTo(rx, capY + 2); ctx.lineTo(rx, capY + capH - 2); ctx.stroke();
+  }
+  if (isMe) {
+    roundRectPath(ctx, -capW / 2, capY, capW, capH, capH * 0.3);
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 2; ctx.stroke();
+  }
+
+  ctx.restore();
+
+  // ---- Name text (upright, not rotated) ----
+  if (r > 14) {
+    ctx.font = `bold ${clamp(r * 0.5, 9, 26)}px Trebuchet MS, sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#12333f';
+    ctx.fillText(c.owner.name, s.x, s.y + bob + bodyTop + bodyH * 0.57);
+  }
+}
+
+// ---------- HUD ----------
+const scoreVal = document.getElementById('scoreVal');
+const rankVal = document.getElementById('rankVal');
+const lbList = document.getElementById('lbList');
+let lbTimer = 0;
+
+function updateHUD(dt) {
+  if (!player) return;
+  const myMass = ownerMass(player);
+  peakMass = Math.max(peakMass, myMass);
+  scoreVal.textContent = Math.floor(myMass * 10);
+
+  lbTimer -= dt;
+  if (lbTimer <= 0) {
+    lbTimer = 0.4;
+    const ranked = owners.map(o => ({ o, m: ownerMass(o) }))
+      .filter(x => x.m > 0)
+      .sort((a, b) => b.m - a.m);
+    const myRank = ranked.findIndex(x => x.o === player) + 1;
+    rankVal.textContent = myRank > 0 ? `#${myRank}/${ranked.length}` : '-';
+    if (myRank > 0) bestRank = Math.min(bestRank, myRank);
+
+    lbList.innerHTML = '';
+    for (let i = 0; i < Math.min(10, ranked.length); i++) {
+      const li = document.createElement('li');
+      if (ranked[i].o === player) li.className = 'me';
+      const sw = document.createElement('span'); sw.className = 'swatch';
+      sw.style.background = ranked[i].o.color;
+      li.appendChild(sw);
+      li.appendChild(document.createTextNode(ranked[i].o.name));
+      lbList.appendChild(li);
+    }
+  }
+}
+
+function drawMinimap() {
+  mctx.clearRect(0, 0, 160, 160);
+  mctx.fillStyle = 'rgba(10,30,42,0.6)';
+  mctx.fillRect(0, 0, 160, 160);
+  const sc = 160 / WORLD;
+  // viruses
+  mctx.fillStyle = '#39d353';
+  for (const v of viruses) mctx.fillRect(v.x * sc - 1, v.y * sc - 1, 2, 2);
+  // owners (dots sized by mass)
+  for (const o of owners) {
+    const mine = ownerCells(o);
+    if (!mine.length) continue;
+    let cx = 0, cy = 0, tot = 0;
+    for (const c of mine) { cx += c.x * c.mass; cy += c.y * c.mass; tot += c.mass; }
+    cx /= tot; cy /= tot;
+    mctx.beginPath();
+    mctx.fillStyle = o.color;
+    const rr = clamp(Math.sqrt(tot) * 0.08, 1.5, 6);
+    mctx.arc(cx * sc, cy * sc, o === player ? Math.max(rr, 3) : rr, 0, 6.283);
+    mctx.fill();
+    if (o === player) { mctx.strokeStyle = '#fff'; mctx.lineWidth = 1.5; mctx.stroke(); }
+  }
+}
+
+// ---------- Draw mouse cursor (crosshair) ----------
+function drawCursor() {
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(mouse.x, mouse.y, 7, 0, 6.283);
+  ctx.moveTo(mouse.x - 12, mouse.y); ctx.lineTo(mouse.x + 12, mouse.y);
+  ctx.moveTo(mouse.x, mouse.y - 12); ctx.lineTo(mouse.x, mouse.y + 12);
+  ctx.stroke();
+}
+
+// ---------- Main loop ----------
+let lastT = performance.now();
+function frame(now) {
+  const dt = Math.min((now - lastT) / 1000, 0.05);
+  lastT = now;
+  const t = now / 1000;
+
+  if (running) {
+    // player steering
+    if (player && ownerCells(player).length) {
+      const m = mouseWorld();
+      steerCells(player, m.x, m.y, dt);
+    }
+    // bots
+    for (const o of owners) if (o.isBot) updateBot(o, dt);
+
+    integrate(dt);
+    handleEating();
+    reapOwners();
+    updateCamera(dt);
+
+    // replenish food
+    if (food.length < FOOD_TARGET) spawnFood(Math.min(6, FOOD_TARGET - food.length));
+    if (viruses.length < VIRUS_TARGET && Math.random() < 0.02) spawnVirus();
+
+    updateHUD(dt);
+  }
+
+  // ----- Render -----
+  ctx.clearRect(0, 0, VW, VH);
+  // background gradient
+  const bg = ctx.createRadialGradient(VW / 2, VH / 2, 100, VW / 2, VH / 2, Math.max(VW, VH));
+  bg.addColorStop(0, '#0e3346'); bg.addColorStop(1, '#071a26');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, VW, VH);
+
+  drawGrid();
+  drawFood();
+  drawEjected();
+
+  // draw cells + viruses sorted by mass (small first)
+  const drawList = [];
+  for (const c of cells) drawList.push({ type: 'c', mass: c.mass, ref: c });
+  for (const v of viruses) drawList.push({ type: 'v', mass: v.mass, ref: v });
+  drawList.sort((a, b) => a.mass - b.mass);
+  for (const d of drawList) {
+    if (d.type === 'v') { drawSingleVirus(d.ref, t); }
+    else drawBottle(d.ref, t, d.ref.owner === player);
+  }
+
+  if (running) { drawMinimap(); drawCursor(); }
+
+  requestAnimationFrame(frame);
+}
+
+function drawSingleVirus(v, t) {
+  const s = worldToScreen(v.x, v.y);
+  const r = v.r * camScale;
+  if (s.x < -r - 20 || s.x > VW + r + 20 || s.y < -r - 20 || s.y > VH + r + 20) return;
+  const spikes = 22;
+  ctx.beginPath();
+  for (let i = 0; i <= spikes; i++) {
+    const a = (i / spikes) * Math.PI * 2 + v.spin;
+    const rr = (i % 2 === 0 ? r : r * 0.82);
+    const px = s.x + Math.cos(a) * rr, py = s.y + Math.sin(a) * rr;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fillStyle = '#39d353'; ctx.strokeStyle = '#1f8a34'; ctx.lineWidth = 3;
+  ctx.fill(); ctx.stroke();
+  ctx.beginPath();
+  ctx.fillStyle = 'rgba(255,255,255,0.15)';
+  ctx.arc(s.x, s.y, r * 0.55, 0, 6.283); ctx.fill();
+  // droplet icon center
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.font = `${r * 0.7}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('☠', s.x, s.y + r * 0.05);
+}
+
+// ---------- Game lifecycle ----------
+function startGame() {
+  // reset world
+  food = []; viruses = []; cells = []; ejected = []; owners = [];
+  spawnFood(FOOD_TARGET);
+  for (let i = 0; i < VIRUS_TARGET; i++) spawnVirus();
+  for (let i = 0; i < BOT_TARGET; i++) spawnBot();
+
+  // player
+  player = makeOwner(chosenName || 'You', chosenColor, false);
+  owners.push(player);
+  const p = safeSpawnPoint();
+  const pc = spawnCell(player, p.x, p.y, START_MASS);
+  camX = pc.x; camY = pc.y; camScale = 1;
+  mouse.x = VW / 2; mouse.y = VH / 2;
+
+  peakMass = START_MASS; bestRank = 99; startTime = performance.now();
+  running = true;
+
+  document.getElementById('menu').classList.add('hidden');
+  document.getElementById('gameover').classList.add('hidden');
+  document.getElementById('hud').classList.remove('hidden');
+}
+
+function endGame() {
+  running = false;
+  const survived = Math.floor((performance.now() - startTime) / 1000);
+  document.getElementById('finalScore').textContent = Math.floor(peakMass * 10);
+  document.getElementById('finalRank').textContent = bestRank < 99 ? `#${bestRank}` : '-';
+  document.getElementById('finalTime').textContent = survived + 's';
+  document.getElementById('hud').classList.add('hidden');
+  document.getElementById('gameover').classList.remove('hidden');
+}
+
+// ---------- Menu wiring ----------
+let chosenColor = COLORS[0];
+let chosenName = '';
+const colorRow = document.getElementById('colorRow');
+COLORS.forEach((c, i) => {
+  const d = document.createElement('div');
+  d.className = 'color-dot' + (i === 0 ? ' sel' : '');
+  d.style.background = c;
+  d.addEventListener('click', () => {
+    chosenColor = c;
+    document.querySelectorAll('.color-dot').forEach(el => el.classList.remove('sel'));
+    d.classList.add('sel');
+  });
+  colorRow.appendChild(d);
+});
+
+const nameInput = document.getElementById('nameInput');
+function beginFromMenu() {
+  chosenName = (nameInput.value || '').trim().slice(0, 14) || 'You';
+  startGame();
+}
+document.getElementById('playBtn').addEventListener('click', beginFromMenu);
+nameInput.addEventListener('keydown', e => { if (e.code === 'Enter') beginFromMenu(); });
+document.getElementById('respawnBtn').addEventListener('click', () => {
+  document.getElementById('gameover').classList.add('hidden');
+  document.getElementById('menu').classList.remove('hidden');
+});
+
+// kick off render loop (menu shows an idle background)
+requestAnimationFrame(frame);
+
+})();
+</script>
+</body>
+</html>

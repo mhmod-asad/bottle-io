@@ -1,0 +1,7 @@
+# OS / OneDrive junk
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Local preview/verification helper (not needed to play the game)
+.claude/
