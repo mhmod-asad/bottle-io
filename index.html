@@ -258,7 +258,7 @@ const VIRUS_TARGET = 16;
 const START_MASS = 24;
 const MIN_SPLIT_MASS = 36;
 const MAX_PIECES = 12;
-const MERGE_COOLDOWN = 12;          // seconds before split pieces can re-merge
+const MERGE_COOLDOWN = 8;           // seconds before split pieces can re-merge
 const EJECT_MASS = 14;
 const VIRUS_MASS = 130;
 const VIRUS_POP_MASS = 100;         // above this mass a virus will pop you; below it you pass through safely
@@ -326,6 +326,7 @@ function spawnCell(owner, x, y, mass) {
     mergeTimer: 0,         // seconds until it can merge with siblings
     wobble: rand(0, Math.PI * 2),
     pop: 0,                // transient grow-pulse scale (eases back to 0)
+    lead: false,           // is this the frontmost piece its group merges into?
     id: nextId++,
   };
   cells.push(c);
@@ -426,7 +427,8 @@ function splitCell(c, tx, ty) {
   let dx = tx - c.x, dy = ty - c.y;
   const d = Math.hypot(dx, dy) || 1; dx /= d; dy /= d;
   const nc = spawnCell(c.owner, c.x, c.y, half);
-  const boost = 18 + c.r * 0.25;
+  // Launch the new piece hard toward the pointer so it clearly shoots to the front.
+  const boost = 600 + c.r * 5;
   nc.vx = dx * boost; nc.vy = dy * boost;
   nc.mergeTimer = MERGE_COOLDOWN;
   c.mergeTimer = MERGE_COOLDOWN;
@@ -523,16 +525,44 @@ function updateBot(owner, dt) {
 
 // ---------- Movement ----------
 function steerCells(owner, tx, ty, dt) {
-  for (const c of cells) {
-    if (c.owner !== owner) continue;
-    let dx = tx - c.x, dy = ty - c.y;
+  // Gather this owner's pieces and their mass-weighted centroid.
+  const mine = [];
+  let cx = 0, cy = 0, tot = 0;
+  for (const c of cells) if (c.owner === owner) { mine.push(c); cx += c.x * c.mass; cy += c.y * c.mass; tot += c.mass; }
+  if (!mine.length) return;
+  cx /= tot; cy /= tot;
+
+  // Steer every piece toward the target (mouse / AI goal). Smaller = faster.
+  for (const c of mine) {
+    const dx = tx - c.x, dy = ty - c.y;
     const d = Math.hypot(dx, dy);
-    const speed = (2.2 + 620 / (c.r + 18)) * 26; // smaller = faster
-    if (d > 1) {
-      const s = Math.min(d, speed) / d;
-      c.x += dx * s * dt;
-      c.y += dy * s * dt;
+    const speed = (2.2 + 620 / (c.r + 18)) * 26;
+    if (d > 1) { const s = Math.min(d, speed) / d; c.x += dx * s * dt; c.y += dy * s * dt; }
+  }
+
+  // Regroup toward the FRONT bottle: the piece furthest along the heading becomes
+  // the "lead"; the others gently funnel into it and (once merge is allowed) merge
+  // into it. Change direction and the new frontmost piece becomes the lead.
+  if (mine.length > 1) {
+    let hx = tx - cx, hy = ty - cy;
+    const hl = Math.hypot(hx, hy) || 1; hx /= hl; hy /= hl;
+    let lead = mine[0], best = -Infinity;
+    for (const c of mine) {
+      c.lead = false;
+      const proj = c.x * hx + c.y * hy;
+      if (proj > best) { best = proj; lead = c; }
     }
+    lead.lead = true;
+    for (const c of mine) {
+      if (c === lead) continue;
+      const dx = lead.x - c.x, dy = lead.y - c.y;
+      const d = Math.hypot(dx, dy) || 1;
+      const pull = Math.min(d, 160) * 1.4;   // gentle funnel toward the front bottle
+      c.x += (dx / d) * pull * dt;
+      c.y += (dy / d) * pull * dt;
+    }
+  } else {
+    mine[0].lead = false;
   }
 }
 
@@ -564,9 +594,13 @@ function integrate(dt) {
       const overlap = a.r + b.r - d;
       if (overlap <= 0) continue;
       if (a.mergeTimer <= 0 && b.mergeTimer <= 0) {
-        // merge when centers close enough
+        // merge when centers close enough — the front (lead) bottle is the absorber
+        // so the group collapses into the piece out in front
         if (d < Math.max(a.r, b.r) * 0.6) {
-          const big = a.mass >= b.mass ? a : b, small = big === a ? b : a;
+          let big, small;
+          if (a.lead && !b.lead) { big = a; small = b; }
+          else if (b.lead && !a.lead) { big = b; small = a; }
+          else { big = a.mass >= b.mass ? a : b; small = big === a ? b : a; }
           big.mass += small.mass; big.r = massToRadius(big.mass);
           small.mass = -1; // mark
         }
