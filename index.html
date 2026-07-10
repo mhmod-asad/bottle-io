@@ -315,7 +315,7 @@ let nextId = 1;
 // ---------- Owner & cell factories ----------
 function makeOwner(name, color, isBot) {
   return { id: nextId++, name, color, isBot, dead: false,
-           ai: isBot ? { retarget: 0, tx: 0, ty: 0 } : null };
+           ai: isBot ? { retarget: 0, tx: 0, ty: 0, gx: 0, gy: 0, hx: 0, hy: 0, foodTimer: 0 } : null };
 }
 
 function spawnCell(owner, x, y, mass) {
@@ -375,7 +375,7 @@ function spawnBot() {
   const o = makeOwner(pick(BOT_NAMES), pick(COLORS), true);
   owners.push(o);
   const p = safeSpawnPoint();
-  spawnCell(o, p.x, p.y, rand(START_MASS, 60));
+  spawnCell(o, p.x, p.y, START_MASS);   // everyone starts the same size as the player
 }
 
 // ---------- Input ----------
@@ -474,15 +474,23 @@ function updateBot(owner, dt) {
     if (c.mass > myMass * EAT_RATIO * 0.9 && d < 480 * 480 && d < threatD) { threat = c; threatD = d; }
     else if (myMass > c.mass * EAT_RATIO * 1.1 && d < 560 * 560 && d < preyD) { prey = c; preyD = d; }
   }
-  // nearest food
-  let fx = cx, fy = cy, fd = 1e9;
-  for (let i = 0; i < food.length; i += 3) { // sample for speed
-    const f = food[i]; const d = dist2(cx, cy, f.x, f.y);
-    if (d < fd) { fd = d; fx = f.x; fy = f.y; }
+  // Nearest food (sampled), committed to for a short window so the bot doesn't
+  // flip-flop between two roughly-equidistant pellets and shiver in place.
+  ai.foodTimer -= dt;
+  // Re-pick on a timer (anti-flip-flop) OR as soon as we arrive at the committed
+  // target, so a bot never sits steering at a pellet it already ate.
+  if (ai.foodTimer <= 0 || dist2(cx, cy, ai.gx, ai.gy) < 40 * 40) {
+    let fx = cx, fy = cy, fd = 1e9;
+    for (let i = 0; i < food.length; i += 3) { // sample for speed
+      const f = food[i]; const d = dist2(cx, cy, f.x, f.y);
+      if (d < fd) { fd = d; fx = f.x; fy = f.y; }
+    }
+    ai.gx = fx; ai.gy = fy; ai.foodTimer = rand(0.5, 0.9);
   }
 
-  // Grow target: prefer catchable prey, otherwise the nearest droplet.
-  let gx = fx, gy = fy;
+  // Grow target: prefer catchable live prey (a moving target is smooth), else the
+  // committed food target.
+  let gx = ai.gx, gy = ai.gy;
   if (prey) { gx = prey.x; gy = prey.y; }
 
   // Weighted desire vector: 60% toward growth, 40% away from a threat.
@@ -498,9 +506,21 @@ function updateBot(owner, dt) {
       }
     }
   }
-  const dl = Math.hypot(dirx, diry) || 1;
-  ai.tx = cx + (dirx / dl) * 300;
-  ai.ty = cy + (diry / dl) * 300;
+
+  // When the forces nearly cancel, don't divide by a tiny vector (that amplifies
+  // noise and makes the bottle shake) — coast along the previous heading instead.
+  let dl = Math.hypot(dirx, diry);
+  if (dl < 0.15) { dirx = ai.hx; diry = ai.hy; dl = Math.hypot(dirx, diry); }
+  if (dl < 1e-4) { dirx = 1; diry = 0; dl = 1; }
+  dirx /= dl; diry /= dl;
+
+  // Low-pass the heading so the bot turns smoothly rather than snapping every frame.
+  const sm = 1 - Math.pow(0.0001, dt);
+  ai.hx += (dirx - ai.hx) * sm;
+  ai.hy += (diry - ai.hy) * sm;
+  const hl = Math.hypot(ai.hx, ai.hy) || 1;
+  ai.tx = cx + (ai.hx / hl) * 300;
+  ai.ty = cy + (ai.hy / hl) * 300;
 
   // Opportunistic split to snap up nearby prey.
   if (prey && ai.retarget <= 0 && myMass > prey.mass * 2.4 && preyD < 200 * 200 && mine.length < 4 && myMass > MIN_SPLIT_MASS * 2) {
@@ -997,7 +1017,7 @@ function drawCursor() {
 // ---------- Main loop ----------
 let lastT = performance.now();
 function frame(now) {
-  const dt = Math.min((now - lastT) / 1000, 0.05);
+  const dt = Math.min(Math.max((now - lastT) / 1000, 0), 0.05);  // clamp to [0, 0.05]; never negative
   lastT = now;
   const t = now / 1000;
 
