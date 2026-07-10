@@ -645,13 +645,27 @@ function integrate(dt) {
 }
 
 // ---------- Eating ----------
+// True if world point (px,py) lies within the bottle's drawn silhouette — an
+// ellipse matched to the body (half-width 0.72r, half-height 1.25r), leaning with
+// the bottle — inflated by `pad`. This makes the WHOLE visible bottle eat (cap,
+// body and base), instead of a too-small centered circle that missed the ends.
+function bottleContains(c, px, py, pad) {
+  const dx = px - c.x, dy = py - c.y;
+  const hh = c.r * 1.25 + pad;
+  if (dx * dx + dy * dy > hh * hh) return false;   // outside bounding circle (hh is the larger axis)
+  const lean = clamp(c.vx * 0.008, -0.35, 0.35);   // must match drawBottle's lean
+  const cos = Math.cos(lean), sin = Math.sin(lean);
+  const lx = dx * cos + dy * sin, ly = -dx * sin + dy * cos;  // into the bottle's upright frame
+  const hw = c.r * 0.72 + pad;
+  return (lx * lx) / (hw * hw) + (ly * ly) / (hh * hh) <= 1;
+}
+
 function handleEating() {
   // cells eat food
   for (const c of cells) {
-    const rr = c.r * c.r;
     for (let i = food.length - 1; i >= 0; i--) {
       const f = food[i];
-      if (dist2(c.x, c.y, f.x, f.y) < rr) {
+      if (bottleContains(c, f.x, f.y, f.r)) {        // touch the bottle anywhere = eat
         c.mass += f.mass; food.splice(i, 1);
         c.pop = Math.min(c.pop + 0.05, 0.16);   // subtle grow-pulse on each sip
       }
@@ -660,7 +674,7 @@ function handleEating() {
     for (let i = ejected.length - 1; i >= 0; i--) {
       const e = ejected[i];
       if (e.life < 0.5) continue;
-      if (dist2(c.x, c.y, e.x, e.y) < rr) { c.mass += e.mass; ejected.splice(i, 1); }
+      if (bottleContains(c, e.x, e.y, e.r)) { c.mass += e.mass; ejected.splice(i, 1); }
     }
     c.r = massToRadius(c.mass);
   }
@@ -674,8 +688,7 @@ function handleEating() {
       const b = cells[j];
       if (b.mass <= 0 || a.owner === b.owner) continue;
       if (a.mass < b.mass * EAT_RATIO) continue;
-      const d = Math.hypot(a.x - b.x, a.y - b.y);
-      if (d < a.r - b.r * 0.5) { a.mass += b.mass; a.r = massToRadius(a.mass); a.pop = Math.min(a.pop + 0.3, 0.5); b.mass = -1; }
+      if (bottleContains(a, b.x, b.y, 0)) { a.mass += b.mass; a.r = massToRadius(a.mass); a.pop = Math.min(a.pop + 0.3, 0.5); b.mass = -1; }
     }
   }
   cells = cells.filter(c => c.mass > 0);
